@@ -47,6 +47,14 @@ def temp_to_rgb(t, t_min=-20, t_max=40):
         b = 0
     return [r, g, b, 200]
 
+def hex_to_rgba(hex_color, alpha=0.15):
+    """Convert #RRGGBB to valid rgba(R, G, B, alpha) string for Plotly."""
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
 PYDECK_COLOR_RANGE = [
     [65, 182, 196],   # cold blue
     [127, 205, 187],
@@ -61,11 +69,11 @@ PYDECK_COLOR_RANGE = [
 # ─────────────────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_real_data() -> pd.DataFrame:
-    # Robust path: works on Streamlit Cloud (data/ folder) and locally
     base = os.path.dirname(os.path.abspath(__file__))
     candidates = [
+        os.path.join(base, "Data", "global_cities_temperature_comparison.csv"),
         os.path.join(base, "data", "global_cities_temperature_comparison.csv"),
-        os.path.join(base, "global_cities_temperature_comparison.csv"),
+        "Data/global_cities_temperature_comparison.csv",
         "data/global_cities_temperature_comparison.csv",
         "global_cities_temperature_comparison.csv",
     ]
@@ -75,14 +83,11 @@ def load_real_data() -> pd.DataFrame:
             df["source"] = "Measured (MODIS)"
             return df
     raise FileNotFoundError(
-        "CSV not found. Expected at: data/global_cities_temperature_comparison.csv"
+        "CSV not found. Expected at: Data/global_cities_temperature_comparison.csv"
     )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # EXTENDED GLOBAL CITY DATASET
-# Regression calibrated on real data: T = −0.911 × Lat + 56.0 (R²=0.990)
-# Cities within validated range (26°N–64°N) use the regression ± small noise.
-# Tropical / polar / S.Hemisphere cities use published MODIS climatology.
 # ─────────────────────────────────────────────────────────────────────────────
 SLOPE, INTERCEPT = -0.911, 56.0
 
@@ -90,57 +95,24 @@ def reg(lat, noise=0.0):
     return round(SLOPE * lat + INTERCEPT + noise, 2)
 
 EXTRA_CITIES = [
-    # ── Tropical (outside regression range, MODIS climatology) ──────────────
-    {"city": "Singapore", "country": "Singapore", "hemisphere": "N",
-     "climate": "Tropical", "latitude": 1.35, "longitude": 103.82,
-     "mean_temp": 31.2, "note": "Estimated (climatology)"},
-    {"city": "Bangkok", "country": "Thailand", "hemisphere": "N",
-     "climate": "Tropical Savanna", "latitude": 13.75, "longitude": 100.50,
-     "mean_temp": 34.1, "note": "Estimated (climatology)"},
-    {"city": "Mumbai", "country": "India", "hemisphere": "N",
-     "climate": "Tropical Wet & Dry", "latitude": 19.08, "longitude": 72.88,
-     "mean_temp": 32.5, "note": "Estimated (climatology)"},
-    # ── Sub-tropical to temperate (regression range) ──────────────────────
-    {"city": "Cairo", "country": "Egypt", "hemisphere": "N",
-     "climate": "Hot Desert", "latitude": 30.06, "longitude": 31.25,
-     "mean_temp": reg(30.06, 0.4), "note": "Estimated (regression)"},
-    {"city": "Madrid", "country": "Spain", "hemisphere": "N",
-     "climate": "Mediterranean", "latitude": 40.42, "longitude": -3.70,
-     "mean_temp": reg(40.42, -1.2), "note": "Estimated (regression)"},
-    {"city": "Istanbul", "country": "Turkey", "hemisphere": "N",
-     "climate": "Mediterranean", "latitude": 41.01, "longitude": 28.98,
-     "mean_temp": reg(41.01, 0.8), "note": "Estimated (regression)"},
-    {"city": "Beijing", "country": "China", "hemisphere": "N",
-     "climate": "Humid Continental", "latitude": 39.91, "longitude": 116.39,
-     "mean_temp": reg(39.91, -1.5), "note": "Estimated (regression)"},
-    {"city": "Paris", "country": "France", "hemisphere": "N",
-     "climate": "Oceanic", "latitude": 48.85, "longitude": 2.35,
-     "mean_temp": reg(48.85, 0.5), "note": "Estimated (regression)"},
-    {"city": "London", "country": "UK", "hemisphere": "N",
-     "climate": "Oceanic", "latitude": 51.51, "longitude": -0.13,
-     "mean_temp": reg(51.51, 0.3), "note": "Estimated (regression)"},
-    {"city": "Moscow", "country": "Russia", "hemisphere": "N",
-     "climate": "Humid Continental", "latitude": 55.75, "longitude": 37.62,
-     "mean_temp": reg(55.75, -0.9), "note": "Estimated (regression)"},
-    # ── Arctic (outside regression range) ────────────────────────────────
-    {"city": "Murmansk", "country": "Russia", "hemisphere": "N",
-     "climate": "Subarctic", "latitude": 68.97, "longitude": 33.09,
-     "mean_temp": -4.2, "note": "Estimated (climatology)"},
-    # ── Southern Hemisphere (spring / early summer in Oct–Nov) ────────────
-    {"city": "Sydney", "country": "Australia", "hemisphere": "S",
-     "climate": "Humid Subtropical", "latitude": -33.87, "longitude": 151.21,
-     "mean_temp": 22.3, "note": "Estimated (climatology) — spring season"},
-    {"city": "Buenos Aires", "country": "Argentina", "hemisphere": "S",
-     "climate": "Humid Subtropical", "latitude": -34.61, "longitude": -58.38,
-     "mean_temp": 21.1, "note": "Estimated (climatology) — spring season"},
-    {"city": "Cape Town", "country": "South Africa", "hemisphere": "S",
-     "climate": "Mediterranean", "latitude": -33.92, "longitude": 18.42,
-     "mean_temp": 21.8, "note": "Estimated (climatology) — spring season"},
+    {"city": "Singapore",    "country": "Singapore",     "hemisphere": "N", "climate": "Tropical",            "latitude": 1.35,   "longitude": 103.82, "mean_temp": 31.2,            "note": "Estimated (climatology)"},
+    {"city": "Bangkok",      "country": "Thailand",      "hemisphere": "N", "climate": "Tropical Savanna",    "latitude": 13.75,  "longitude": 100.50, "mean_temp": 34.1,            "note": "Estimated (climatology)"},
+    {"city": "Mumbai",       "country": "India",         "hemisphere": "N", "climate": "Tropical Wet & Dry",  "latitude": 19.08,  "longitude": 72.88,  "mean_temp": 32.5,            "note": "Estimated (climatology)"},
+    {"city": "Cairo",        "country": "Egypt",         "hemisphere": "N", "climate": "Hot Desert",          "latitude": 30.06,  "longitude": 31.25,  "mean_temp": reg(30.06, 0.4), "note": "Estimated (regression)"},
+    {"city": "Madrid",       "country": "Spain",         "hemisphere": "N", "climate": "Mediterranean",       "latitude": 40.42,  "longitude": -3.70,  "mean_temp": reg(40.42,-1.2), "note": "Estimated (regression)"},
+    {"city": "Istanbul",     "country": "Turkey",        "hemisphere": "N", "climate": "Mediterranean",       "latitude": 41.01,  "longitude": 28.98,  "mean_temp": reg(41.01, 0.8), "note": "Estimated (regression)"},
+    {"city": "Beijing",      "country": "China",         "hemisphere": "N", "climate": "Humid Continental",   "latitude": 39.91,  "longitude": 116.39, "mean_temp": reg(39.91,-1.5), "note": "Estimated (regression)"},
+    {"city": "Paris",        "country": "France",        "hemisphere": "N", "climate": "Oceanic",             "latitude": 48.85,  "longitude": 2.35,   "mean_temp": reg(48.85, 0.5), "note": "Estimated (regression)"},
+    {"city": "London",       "country": "UK",            "hemisphere": "N", "climate": "Oceanic",             "latitude": 51.51,  "longitude": -0.13,  "mean_temp": reg(51.51, 0.3), "note": "Estimated (regression)"},
+    {"city": "Moscow",       "country": "Russia",        "hemisphere": "N", "climate": "Humid Continental",   "latitude": 55.75,  "longitude": 37.62,  "mean_temp": reg(55.75,-0.9), "note": "Estimated (regression)"},
+    {"city": "Murmansk",     "country": "Russia",        "hemisphere": "N", "climate": "Subarctic",           "latitude": 68.97,  "longitude": 33.09,  "mean_temp": -4.2,            "note": "Estimated (climatology)"},
+    {"city": "Sydney",       "country": "Australia",     "hemisphere": "S", "climate": "Humid Subtropical",   "latitude": -33.87, "longitude": 151.21, "mean_temp": 22.3,            "note": "Estimated (climatology) — spring season"},
+    {"city": "Buenos Aires", "country": "Argentina",     "hemisphere": "S", "climate": "Humid Subtropical",   "latitude": -34.61, "longitude": -58.38, "mean_temp": 21.1,            "note": "Estimated (climatology) — spring season"},
+    {"city": "Cape Town",    "country": "South Africa",  "hemisphere": "S", "climate": "Mediterranean",       "latitude": -33.92, "longitude": 18.42,  "mean_temp": 21.8,            "note": "Estimated (climatology) — spring season"},
 ]
 
 @st.cache_data
 def build_city_summary(df_real: pd.DataFrame) -> pd.DataFrame:
-    """Combine real city means with estimated global cities."""
     real_summary = (
         df_real.groupby(["city", "country", "climate"])
         .agg(latitude=("latitude", "mean"),
@@ -237,14 +209,8 @@ if page == "🌐 Global Temperature Map":
         color="mean_temp",
         size=view_df["n_records"].clip(lower=2000).fillna(2000),
         hover_name="city",
-        hover_data={
-            "country": True,
-            "climate": True,
-            "mean_temp": ":.1f",
-            "latitude": ":.2f",
-            "note": True,
-            "n_records": True,
-        },
+        hover_data={"country": True, "climate": True, "mean_temp": ":.1f",
+                    "latitude": ":.2f", "note": True, "n_records": True},
         color_continuous_scale="RdYlBu_r",
         range_color=[-22, 38],
         projection="natural earth",
@@ -256,17 +222,13 @@ if page == "🌐 Global Temperature Map":
         showland=True, landcolor="#2a2a2a",
         showocean=True, oceancolor="#1a3a4a",
         showcoastlines=True, coastlinecolor="#555",
-        showframe=False,
-        bgcolor="rgba(0,0,0,0)",
+        showframe=False, bgcolor="rgba(0,0,0,0)",
     )
     fig.update_layout(
         height=560,
         paper_bgcolor="rgba(0,0,0,0)",
         geo_bgcolor="rgba(0,0,0,0)",
-        coloraxis_colorbar=dict(
-            title="°C", ticksuffix="°C",
-            len=0.7, thickness=14,
-        ),
+        coloraxis_colorbar=dict(title="°C", ticksuffix="°C", len=0.7, thickness=14),
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -287,7 +249,7 @@ if page == "🌐 Global Temperature Map":
     )
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PAGE 2 — 3D CITY HEATMAP (Kepler.gl style via pydeck)
+# PAGE 2 — 3D CITY HEATMAP
 # ═════════════════════════════════════════════════════════════════════════════
 elif page == "🗺️ 3D City Heatmap (Kepler-style)":
     st.title("🗺️ 3D Land Surface Temperature — Kepler.gl-Style")
@@ -296,34 +258,21 @@ elif page == "🗺️ 3D City Heatmap (Kepler-style)":
         "Each hexagonal prism height = temperature. Drag to rotate · Scroll to zoom · Hover for values."
     )
 
-    city_choice = st.selectbox(
-        "Select city",
-        real_cities,
-        help="Only the 3 measured cities have spatial data for 3D rendering.",
-    )
+    city_choice = st.selectbox("Select city", real_cities,
+                               help="Only the 3 measured cities have spatial data for 3D rendering.")
 
     city_meta = {
-        "Dammam":    {"center": [50.01, 26.36], "zoom": 9.5, "pitch": 52,
-                      "desc": "Hot desert climate · mean 31.5°C · 11,998 measurements"},
-        "Dublin":    {"center": [-6.39, 53.30], "zoom": 9.5, "pitch": 52,
-                      "desc": "Temperate maritime · mean 9.6°C · 6,797 measurements"},
-        "Reykjavik": {"center": [-21.77, 64.08], "zoom": 9.5, "pitch": 52,
-                      "desc": "Subarctic · mean −3.7°C · 7,110 measurements"},
+        "Dammam":    {"center": [50.01, 26.36], "zoom": 9.5, "pitch": 52, "desc": "Hot desert climate · mean 31.5°C · 11,998 measurements"},
+        "Dublin":    {"center": [-6.39, 53.30],  "zoom": 9.5, "pitch": 52, "desc": "Temperate maritime · mean 9.6°C · 6,797 measurements"},
+        "Reykjavik": {"center": [-21.77, 64.08], "zoom": 9.5, "pitch": 52, "desc": "Subarctic · mean −3.7°C · 7,110 measurements"},
     }
 
     meta = city_meta[city_choice]
     df_c = df_real[df_real["city"] == city_choice].copy()
-    df_map = df_c[["longitude", "latitude", "temperature_celsius"]].rename(
-        columns={"longitude": "lon", "latitude": "lat", "temperature_celsius": "temp"}
-    )
 
     dates = sorted(df_real[df_real["city"] == city_choice]["date"].dt.date.unique())
-    sel_date = st.select_slider(
-        "Filter by date (updates map)",
-        options=dates,
-        value=dates[0],
-        format_func=lambda d: d.strftime("%b %d"),
-    )
+    sel_date = st.select_slider("Filter by date (updates map)", options=dates, value=dates[0],
+                                format_func=lambda d: d.strftime("%b %d"))
 
     df_day = df_c[df_c["date"].dt.date == sel_date][["longitude", "latitude", "temperature_celsius"]]
     df_day = df_day.rename(columns={"longitude": "lon", "latitude": "lat", "temperature_celsius": "temp"})
@@ -331,60 +280,33 @@ elif page == "🗺️ 3D City Heatmap (Kepler-style)":
     col1, col2, col3 = st.columns(3)
     col1.metric("City", city_choice)
     col2.metric("Date", sel_date.strftime("%b %d, %Y"))
-    col3.metric(
-        "Temp range",
-        f"{df_day['temp'].min():.1f}°C – {df_day['temp'].max():.1f}°C",
-    )
+    col3.metric("Temp range", f"{df_day['temp'].min():.1f}°C – {df_day['temp'].max():.1f}°C")
 
     hex_layer = pdk.Layer(
-        "HexagonLayer",
-        data=df_day,
-        get_position=["lon", "lat"],
-        get_elevation="temp",
-        elevation_scale=800,
-        elevation_range=[0, 3000],
-        radius=800,
-        color_range=PYDECK_COLOR_RANGE,
-        pickable=True,
-        extruded=True,
-        coverage=0.9,
+        "HexagonLayer", data=df_day,
+        get_position=["lon", "lat"], get_elevation="temp",
+        elevation_scale=800, elevation_range=[0, 3000], radius=800,
+        color_range=PYDECK_COLOR_RANGE, pickable=True, extruded=True, coverage=0.9,
     )
-
-    view = pdk.ViewState(
-        longitude=meta["center"][0],
-        latitude=meta["center"][1],
-        zoom=meta["zoom"],
-        pitch=meta["pitch"],
-        bearing=-10,
-    )
-
+    view = pdk.ViewState(longitude=meta["center"][0], latitude=meta["center"][1],
+                         zoom=meta["zoom"], pitch=meta["pitch"], bearing=-10)
     deck = pdk.Deck(
-        layers=[hex_layer],
-        initial_view_state=view,
+        layers=[hex_layer], initial_view_state=view,
         map_style="mapbox://styles/mapbox/dark-v10",
-        tooltip={
-            "html": "{elevationValue} °C",
-            "style": {"color": "white", "backgroundColor": "#333"},
-        },
+        tooltip={"html": "{elevationValue} °C", "style": {"color": "white", "backgroundColor": "#333"}},
     )
-
     st.pydeck_chart(deck, use_container_width=True)
     st.caption(
-        f"🏙️ {meta['desc']} | "
-        "Prism height = temperature | "
-        "Colour: blue (cold) → yellow → red (hot) | "
-        "Use the date slider above to animate through 14 days."
+        f"🏙️ {meta['desc']} | Prism height = temperature | "
+        "Colour: blue (cold) → yellow → red (hot) | Use the date slider above to animate through 14 days."
     )
 
     st.markdown("### 🔎 Flat Spatial View — Same Date")
     fig2 = px.scatter_mapbox(
-        df_day, lat="lat", lon="lon",
-        color="temp",
+        df_day, lat="lat", lon="lon", color="temp",
         color_continuous_scale="RdYlBu_r",
         range_color=[df_day["temp"].min() - 2, df_day["temp"].max() + 2],
-        size_max=6,
-        zoom=9, height=400,
-        mapbox_style="carto-darkmatter",
+        size_max=6, zoom=9, height=400, mapbox_style="carto-darkmatter",
         labels={"temp": "LST (°C)"},
         hover_data={"temp": ":.2f", "lat": ":.3f", "lon": ":.3f"},
     )
@@ -421,7 +343,6 @@ elif page == "📊 Latitude–Temperature Correlation":
         else ("Measured (MODIS)" if r["note"] == "Measured (MODIS)" else "Estimated"),
         axis=1,
     )
-
     color_map = {
         "Measured (MODIS)": "#FF6B35",
         "Estimated": "#4ECDC4",
@@ -429,54 +350,39 @@ elif page == "📊 Latitude–Temperature Correlation":
     }
 
     fig = px.scatter(
-        df_plot,
-        x="latitude", y="mean_temp",
-        color="region",
-        color_discrete_map=color_map,
-        symbol="region",
-        text="city",
-        hover_data={"country": True, "climate": True,
-                    "mean_temp": ":.1f", "note": True},
-        labels={"latitude": "Latitude (°N/°S)", "mean_temp": "Mean LST (°C)",
-                "region": "Data type"},
-        title="Latitude vs Mean Land Surface Temperature (Oct–Nov 2025)",
-        height=580,
+        df_plot, x="latitude", y="mean_temp",
+        color="region", color_discrete_map=color_map, symbol="region", text="city",
+        hover_data={"country": True, "climate": True, "mean_temp": ":.1f", "note": True},
+        labels={"latitude": "Latitude (°N/°S)", "mean_temp": "Mean LST (°C)", "region": "Data type"},
+        title="Latitude vs Mean Land Surface Temperature (Oct–Nov 2025)", height=580,
     )
-    fig.update_traces(
-        marker=dict(size=13, line=dict(width=1.5, color="white")),
-        textposition="top center",
-        textfont_size=10,
-    )
+    fig.update_traces(marker=dict(size=13, line=dict(width=1.5, color="white")),
+                      textposition="top center", textfont_size=10)
 
     nh = df_plot[df_plot["hemisphere"] == "N"]
     if len(nh) >= 2:
         lats = np.linspace(nh["latitude"].min() - 3, nh["latitude"].max() + 3, 200)
         temps = SLOPE * lats + INTERCEPT
         fig.add_trace(go.Scatter(
-            x=lats, y=temps,
-            mode="lines",
+            x=lats, y=temps, mode="lines",
             name=f"NH Regression: T = {SLOPE}×Lat + {INTERCEPT} (R²=0.990)",
             line=dict(color="#FF6B35", width=2.5, dash="dash"),
         ))
         fig.add_trace(go.Scatter(
             x=np.concatenate([lats, lats[::-1]]),
             y=np.concatenate([temps + 2.5, (temps - 2.5)[::-1]]),
-            fill="toself",
-            fillcolor="rgba(255,107,53,0.1)",
+            fill="toself", fillcolor="rgba(255,107,53,0.1)",
             line=dict(color="rgba(0,0,0,0)"),
-            name="±2.5°C confidence band",
-            showlegend=True,
+            name="±2.5°C confidence band", showlegend=True,
         ))
 
     fig.add_hline(y=0, line_dash="dot", line_color="gray", opacity=0.5,
                   annotation_text="0°C", annotation_position="left")
     fig.add_vline(x=0, line_dash="dot", line_color="gray", opacity=0.5,
                   annotation_text="Equator", annotation_position="top")
-    fig.update_layout(
-        xaxis_title="Latitude (°N positive, °S negative)",
-        yaxis_title="Mean Land Surface Temperature (°C)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left"),
-    )
+    fig.update_layout(xaxis_title="Latitude (°N positive, °S negative)",
+                      yaxis_title="Mean Land Surface Temperature (°C)",
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left"))
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("### 🔬 Statistical Results")
@@ -493,8 +399,7 @@ elif page == "📊 Latitude–Temperature Correlation":
         "In the Southern Hemisphere, October–November is **spring / early summer**, "
         "so cities like Sydney, Buenos Aires, and Cape Town at ~34°S are *warmer* "
         "than the NH regression predicts for −34°. "
-        "To build a global model, a **season-adjusted** or **month-specific** regression "
-        "would be required."
+        "To build a global model, a **season-adjusted** or **month-specific** regression would be required."
     )
 
     st.markdown("### 🌡️ Temperature Spread by City")
@@ -509,11 +414,8 @@ elif page == "📊 Latitude–Temperature Correlation":
         c = colors.get(row["city"], "gray")
         fig_bar.add_trace(go.Box(
             name=row["city"],
-            q1=[row["mean"] - row["std"]],
-            median=[row["mean"]],
-            q3=[row["mean"] + row["std"]],
-            lowerfence=[row["min"]],
-            upperfence=[row["max"]],
+            q1=[row["mean"] - row["std"]], median=[row["mean"]],
+            q3=[row["mean"] + row["std"]], lowerfence=[row["min"]], upperfence=[row["max"]],
             marker_color=c,
         ))
     fig_bar.update_layout(height=350, yaxis_title="LST (°C)", showlegend=False)
@@ -536,16 +438,18 @@ elif page == "📅 14-Day Temperature Trends":
     )
     daily.columns = ["city", "date", "mean", "std", "min", "max"]
 
+    # Proper hex → rgba colors (fixes the ValueError in Plotly)
     city_colors = {"Dammam": "#FF6B35", "Dublin": "#4ECDC4", "Reykjavik": "#45B7D1"}
 
     fig = go.Figure()
     for city, color in city_colors.items():
         d = daily[daily["city"] == city].sort_values("date")
+        # Use proper rgba conversion instead of broken string manipulation
         fig.add_trace(go.Scatter(
             x=pd.concat([d["date"], d["date"].iloc[::-1]]),
             y=pd.concat([d["mean"] + d["std"], (d["mean"] - d["std"]).iloc[::-1]]),
             fill="toself",
-            fillcolor=color.replace("#", "rgba(").replace(")", "") + ",0.15)",
+            fillcolor=hex_to_rgba(color, 0.15),
             line=dict(color="rgba(0,0,0,0)"),
             showlegend=False,
         ))
@@ -556,17 +460,14 @@ elif page == "📅 14-Day Temperature Trends":
             line=dict(color=color, width=2.5),
             marker=dict(size=7, line=dict(width=1.5, color="white")),
             hovertemplate=(
-                f"{city}<br>"
-                "Date: %{x|%b %d}<br>"
-                "Mean: %{y:.1f}°C<extra></extra>"
+                f"{city}<br>Date: %{{x|%b %d}}<br>Mean: %{{y:.1f}}°C<extra></extra>"
             ),
         ))
 
     fig.add_hline(y=0, line_dash="dot", line_color="gray",
                   opacity=0.4, annotation_text="0°C freeze line")
     fig.update_layout(
-        height=480,
-        xaxis_title="Date",
+        height=480, xaxis_title="Date",
         yaxis_title="Mean Land Surface Temperature (°C)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
         hovermode="x unified",
@@ -583,7 +484,7 @@ elif page == "📅 14-Day Temperature Trends":
             x=pd.concat([d["date"], d["date"].iloc[::-1]]),
             y=pd.concat([d["max"], d["min"].iloc[::-1]]),
             fill="toself", name="Min–Max range",
-            fillcolor=color.replace("#", "rgba(").replace(")", "") + ",0.2)",
+            fillcolor=hex_to_rgba(color, 0.2),
             line=dict(color="rgba(0,0,0,0)"),
         ))
         fig2.add_trace(go.Scatter(
@@ -593,12 +494,9 @@ elif page == "📅 14-Day Temperature Trends":
             marker=dict(size=6),
         ))
         fig2.update_layout(
-            title=f"{city} — 14-Day LST",
-            height=280,
-            margin=dict(t=40, b=20),
-            yaxis_title="LST (°C)",
-            showlegend=True,
-            legend=dict(orientation="h"),
+            title=f"{city} — 14-Day LST", height=280,
+            margin=dict(t=40, b=20), yaxis_title="LST (°C)",
+            showlegend=True, legend=dict(orientation="h"),
         )
         st.plotly_chart(fig2, use_container_width=True)
 
@@ -633,8 +531,7 @@ elif page == "📈 Statistics & Methodology":
              std=("temperature_celsius", "std"),
              min=("temperature_celsius", "min"),
              max=("temperature_celsius", "max"))
-        .reset_index()
-        .round(2)
+        .reset_index().round(2)
     )
     city_stats.columns = ["City", "Country", "Climate", "N", "Mean (°C)", "Std", "Min (°C)", "Max (°C)"]
     st.dataframe(city_stats, use_container_width=True, hide_index=True)
@@ -663,7 +560,6 @@ T = −0.911 × Latitude + 56.0
 This slope (−0.5 to −1.0°C/°) is consistent with IPCC AR6 climatological models.
 """
         )
-
     with col2:
         nh = df_cities[df_cities["hemisphere"] == "N"].copy()
         lats = np.linspace(nh["latitude"].min() - 5, nh["latitude"].max() + 5, 200)
@@ -679,37 +575,32 @@ This slope (−0.5 to −1.0°C/°) is consistent with IPCC AR6 climatological m
                 x=[row["latitude"]], y=[row["mean_temp"]],
                 mode="markers+text",
                 marker=dict(size=11, color=c, line=dict(width=1.5, color="white")),
-                text=[row["city"]], textposition="top center",
-                textfont_size=9,
+                text=[row["city"]], textposition="top center", textfont_size=9,
                 name=row["city"], showlegend=False,
             ))
-        fig.update_layout(
-            title="Regression fit — Northern Hemisphere",
-            xaxis_title="Latitude (°N)",
-            yaxis_title="Mean LST (°C)",
-            height=380,
-        )
+        fig.update_layout(title="Regression fit — Northern Hemisphere",
+                          xaxis_title="Latitude (°N)", yaxis_title="Mean LST (°C)", height=380)
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("### 🛠️ Data Pipeline")
     pipeline = pd.DataFrame([
-        ["MODIS/061/MOD11A1", "NASA Terra Satellite", "1 km daily LST", "Primary data source"],
-        ["Google Earth Engine", "Cloud GIS platform", "API v1-alpha", "Data extraction"],
-        ["Python / Colab", "earthengine-api 0.1.400 · pandas 2.0.3", "35 s extraction", "Processing"],
-        ["CSV Export", "25,905 rows · 9 columns", "2.1 MB file", "Data transfer"],
-        ["pydeck / deck.gl", "WebGL GPU rendering", "60 FPS · 480 MB GPU", "3D visualisation"],
-        ["Plotly", "Interactive charts", "Client-side rendering", "Statistical charts"],
+        ["MODIS/061/MOD11A1",  "NASA Terra Satellite",                    "1 km daily LST",        "Primary data source"],
+        ["Google Earth Engine","Cloud GIS platform",                      "API v1-alpha",           "Data extraction"],
+        ["Python / Colab",     "earthengine-api 0.1.400 · pandas 2.0.3", "35 s extraction",        "Processing"],
+        ["CSV Export",         "25,905 rows · 9 columns",                 "2.1 MB file",            "Data transfer"],
+        ["pydeck / deck.gl",   "WebGL GPU rendering",                     "60 FPS · 480 MB GPU",    "3D visualisation"],
+        ["Plotly",             "Interactive charts",                       "Client-side rendering",  "Statistical charts"],
     ], columns=["Component", "Technology", "Metric", "Purpose"])
     st.dataframe(pipeline, use_container_width=True, hide_index=True)
 
     st.markdown("### ⚙️ Execution Performance (from original Colab run)")
     perf = pd.DataFrame([
-        ["Installation",        "31.62", "47.9", "9.6",  "0.27"],
-        ["Library imports",     "6.92",  "86.5", "9.6",  "0.03"],
-        ["GEE authentication",  "0.59",  "63.6", "10.2", "0.42"],
-        ["Data extraction",     "35.27", "31.7", "10.1", "23.08"],
-        ["Statistical analysis","2.06",  "18.1", "10.2", "0.07"],
-        ["TOTAL",               "77.86", "86.5", "10.2", "24.91"],
+        ["Installation",         "31.62", "47.9", "9.6",  "0.27"],
+        ["Library imports",      "6.92",  "86.5", "9.6",  "0.03"],
+        ["GEE authentication",   "0.59",  "63.6", "10.2", "0.42"],
+        ["Data extraction",      "35.27", "31.7", "10.1", "23.08"],
+        ["Statistical analysis", "2.06",  "18.1", "10.2", "0.07"],
+        ["TOTAL",                "77.86", "86.5", "10.2", "24.91"],
     ], columns=["Step", "Time (s)", "Peak CPU (%)", "Peak Memory (%)", "Network (MB)"])
     st.dataframe(perf, use_container_width=True, hide_index=True)
 
